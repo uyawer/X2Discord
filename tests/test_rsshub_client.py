@@ -32,7 +32,7 @@ class DummyAsyncClient:
         self.headers = headers
         self.timeout = timeout
 
-    async def get(self, path: str) -> DummyResponse:
+    async def get(self, path: str, params: dict[str, int] | None = None) -> DummyResponse:
         return DummyResponse(SAMPLE_FEED)
 
     async def aclose(self) -> None:

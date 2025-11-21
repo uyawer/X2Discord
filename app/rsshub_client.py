@@ -1,6 +1,6 @@
 import html
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 import feedparser
@@ -11,13 +11,14 @@ class RssHubClient:
     MAXIMUM_RESULTS = 100
     _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 
-    def __init__(self, base_url: str = "http://localhost:1200"):  # pragma: no cover - HTTP client wrapper
+    def __init__(self, base_url: str = "http://localhost:1200", refresh_seconds: int | None = None):  # pragma: no cover - HTTP client wrapper
         normalized = base_url.rstrip("/")
         self._client = httpx.AsyncClient(
             base_url=normalized,
             headers={"User-Agent": "x2discord/1.0"},
             timeout=30,
         )
+        self._refresh_seconds = refresh_seconds
 
     @property
     def base_url(self) -> str:
@@ -29,7 +30,8 @@ class RssHubClient:
     async def fetch_latest_posts(self, account: str, max_results: int = 1) -> List[Dict[str, str]]:
         normalized = account.strip().lstrip("@")
         limit = max(self.MINIMUM_RESULTS, min(max_results, self.MAXIMUM_RESULTS))
-        response = await self._client.get(f"/twitter/user/{normalized}")
+        params = {"refresh": self._refresh_seconds} if self._refresh_seconds is not None else None
+        response = await self._client.get(f"/twitter/user/{normalized}", params=params)
         response.raise_for_status()
         payload = response.text or ""
         parsed = feedparser.parse(payload)

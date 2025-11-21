@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import time
-from typing import Dict, Tuple
+from collections import defaultdict
+from typing import Dict, Set, Tuple
 
 import httpx
 
@@ -23,6 +24,7 @@ class TweetPoller:
         self._state: Dict[Tuple[int, str], Dict[str, object]] = {}
         self._last_seen: Dict[str, str] = {}
         self._account_last_call: Dict[str, float] = {}
+        self._sent_links: Dict[int, Set[str]] = defaultdict(set)
 
     async def start(self) -> None:
         while not self._stop_event.is_set():
@@ -84,6 +86,7 @@ class TweetPoller:
         state["backoff_multiplier"] = 1
         if not posts:
             return
+        sent_links = self._sent_links[subscription.channel_id]
         latest_id = posts[0]["id"]
         if not seen_id:
             state["last_id"] = latest_id
@@ -92,13 +95,18 @@ class TweetPoller:
                 subscription.channel_id, subscription.account, latest_id
             )
             return
-        new_posts = []
+        new_posts: list[tuple[dict, str]] = []
         for entry in posts:
             if seen_id and entry["id"] == seen_id:
                 break
+            entry_id = entry.get("link") or entry.get("id")
+            if not entry_id:
+                continue
+            if entry_id in sent_links:
+                continue
             if not self._should_include(entry.get("text", ""), subscription):
                 continue
-            new_posts.append(entry)
+            new_posts.append((entry, entry_id))
         if not new_posts:
             state["last_id"] = latest_id
             self._last_seen[subscription.account] = latest_id
@@ -106,7 +114,7 @@ class TweetPoller:
                 subscription.channel_id, subscription.account, latest_id
             )
             return
-        for entry in reversed(new_posts):
+        for entry, entry_id in reversed(new_posts):
             await self.notifier.send_message(
                 subscription.channel_id,
                 subscription.account,
@@ -114,6 +122,7 @@ class TweetPoller:
                 entry.get("link", ""),
                 thread_id=subscription.thread_id,
             )
+            sent_links.add(entry_id)
         state["last_id"] = latest_id
         self._last_seen[subscription.account] = latest_id
         await self.store.set_last_tweet_id(

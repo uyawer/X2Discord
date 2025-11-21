@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from pydantic import Field, PositiveInt, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,6 +10,10 @@ class Settings(BaseSettings):
     rsshub_base_url: str = Field(
         "http://localhost:1200",
         description="RSSHubのベースURL、末尾スラッシュ不要",
+    )
+    rsshub_refresh_seconds: Optional[PositiveInt] = Field(
+        None,
+        description="RSSHubに `refresh` クエリを渡す秒数。省略するとデフォルトキャッシュを使う",
     )
     default_poll_interval_seconds: PositiveInt = Field(
         60,
