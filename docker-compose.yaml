@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  X2Discord:
+    image: x2discord
+    build: .
+    env_file: .env
+    environment:
+      RSSHUB_BASE_URL: http://rsshub:1200
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./subscriptions.json:/app/subscriptions.json
+    restart: unless-stopped
+
+  rsshub:
+    image: diygod/rsshub
+    restart: always
+    ports:
+      - '1200:1200'
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: 'redis://redis:6379/'
+      PUPPETEER_WS_ENDPOINT: 'ws://browserless:3000'
+      PUPPETEER_REAL_BROWSER_SERVICE: 'http://real-browser:3000'
+    env_file: .env
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:1200/healthz']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - redis
+      - browserless
+
+  real-browser:
+    image: ghcr.io/hyoban/puppeteer-real-browser-hono
+    restart: always
+    ports:
+      - '3001:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  browserless:
+    image: browserless/chrome
+    restart: always
+    ulimits:
+      core:
+        hard: 0
+        soft: 0
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/pressure']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:alpine
+    restart: always
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
+
+volumes:
+    redis-data:
