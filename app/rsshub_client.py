@@ -49,6 +49,7 @@ class RssHubClient:
                     "id": self._entry_id(raw, normalized, idx),
                     "text": self._strip_html(text),
                     "link": raw.get("link") or f"https://x.com/{normalized}",
+                    "raw_text": text,
                 }
             )
         return processed

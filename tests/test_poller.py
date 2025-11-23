@@ -71,3 +71,27 @@ async def test_duplicate_link_only_sent_once() -> None:
     await poller._poll_subscription(subscription, state)
     assert len(notifier.sent_messages) == 1
     assert poller._sent_links[subscription.channel_id] == {"https://x.com/post/1"}
+
+
+def test_is_repost_detection() -> None:
+    repost_samples = [
+        "RT @foo retweeted text",
+        "rt @foo 内容",
+        "RT Test",  # has non-breaking space
+        "rt",  # bare prefix
+        "リツイート テスト",
+    ]
+    for text in repost_samples:
+        assert TweetPoller._is_repost(text)
+
+    assert not TweetPoller._is_repost("普通の投稿")
+    assert not TweetPoller._is_repost("This is a quote tweet")
+
+
+def test_is_quote_detection() -> None:
+    entry = {
+        "text": "明日の夜９時から！",
+        "raw_text": "<div class=\"rsshub-quote\">引用本文</div>",
+    }
+    assert TweetPoller._is_quote(entry["text"], entry["raw_text"])
+    assert not TweetPoller._is_quote("ノーマル投稿", "<div>本文</div>")

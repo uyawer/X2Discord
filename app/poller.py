@@ -104,7 +104,7 @@ class TweetPoller:
                 continue
             if entry_id in sent_links:
                 continue
-            if not self._should_include(entry.get("text", ""), subscription):
+            if not self._should_include(entry, subscription):
                 continue
             new_posts.append((entry, entry_id))
         if not new_posts:
@@ -168,19 +168,36 @@ class TweetPoller:
         base = max(subscription.interval_seconds, 60)
         return base * multiplier
 
-    def _should_include(self, text: str, subscription: Subscription) -> bool:
+    def _should_include(self, entry: dict, subscription: Subscription) -> bool:
+        text = entry.get("text", "")
+        raw_text = entry.get("raw_text", "")
         if not subscription.include_reposts and self._is_repost(text):
             return False
-        if not subscription.include_quotes and self._is_quote(text):
+        if not subscription.include_quotes and self._is_quote(text, raw_text):
             return False
         return True
 
     @staticmethod
     def _is_repost(text: str) -> bool:
-        candidate = text.strip().lower()
-        return candidate.startswith("rt @") or candidate.startswith("rt ") or candidate.startswith("リツイート")
+        for line in text.splitlines():
+            candidate = line.strip().lower()
+            if not candidate:
+                continue
+            if candidate.startswith("リツイート"):
+                return True
+            if candidate.startswith("rt"):
+                rest = candidate[2:]
+                if not rest or not rest[0].isalnum():
+                    return True
+        return False
 
     @staticmethod
-    def _is_quote(text: str) -> bool:
+    def _is_quote(text: str, raw_text: str | None = None) -> bool:
         lower = text.lower()
-        return "quote tweet" in lower or "引用" in text or "quoted tweet" in lower
+        raw_lower = (raw_text or "").lower()
+        return (
+            "quote tweet" in lower
+            or "引用" in lower
+            or "quoted tweet" in lower
+            or "rsshub-quote" in raw_lower
+        )
