@@ -8,7 +8,7 @@ from discord import AllowedMentions, app_commands
 from discord.abc import Messageable
 
 from .rsshub_client import RssHubClient
-from .store import SubscriptionStore
+from .store import Subscription, SubscriptionStore
 from .utils import parse_keyword_input
 
 
@@ -152,6 +152,7 @@ class DiscordNotifier(discord.Client):
                 subscription.account,
                 latest_post,
                 interaction.user.mention,
+                subscription,
             )
             await interaction.followup.send(
                 f"{subscription.account} を監視設定に追加したで。",
@@ -336,13 +337,20 @@ class DiscordNotifier(discord.Client):
         username: str,
         latest_post: Optional[dict],
         actor: str,
+        subscription: Subscription,
     ) -> None:
         try:
             channel = await self._resolve_channel(channel_id)
         except Exception as exc:  # pragma: no cover - runtime errors
             logger.warning("通知先チャンネルを取得できませんでした: %s", exc)
             return
-        text = f"{actor} が {username} を監視リストに追加したで。"
+        text = (
+            f"{actor} が {username} を監視リストに追加したで。"
+            f"\n設定: {self._format_interval(subscription.interval_seconds)} / リポスト:{'あり' if subscription.include_reposts else 'なし'}"
+            f" / 引用:{'あり' if subscription.include_quotes else 'なし'}"
+            f" / キーワード:{self._format_keywords(subscription.include_keywords)}"
+            f" / 除外キーワード:{self._format_keywords(subscription.exclude_keywords)}"
+        )
         if latest_post:
             text += f"\n最新の投稿はこれやで: {self._rewrite_tweet_url(latest_post['link'])}"
         await channel.send(content=text, allowed_mentions=AllowedMentions.none())
@@ -355,3 +363,8 @@ class DiscordNotifier(discord.Client):
             return
         text = f"{actor} が {username} の監視を解除したで。"
         await channel.send(content=text, allowed_mentions=AllowedMentions.none())
+
+    @staticmethod
+    def _format_keywords(values: Sequence[str] | None) -> str:
+        return ", ".join(values) if values else "なし"
+
