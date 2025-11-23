@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 from collections import defaultdict
 from typing import Dict, Set, Tuple
@@ -9,12 +10,14 @@ import httpx
 from .discord_bot import DiscordNotifier
 from .store import Subscription, SubscriptionStore
 from .rsshub_client import RssHubClient
+from .utils import normalize_keyword_text
 
 logger = logging.getLogger(__name__)
 
 
 class TweetPoller:
     ACCOUNT_MIN_INTERVAL_SECONDS = 30
+    _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 
     def __init__(self, notifier: DiscordNotifier, store: SubscriptionStore, rsshub_client: RssHubClient):
         self.notifier = notifier
@@ -175,7 +178,23 @@ class TweetPoller:
             return False
         if not subscription.include_quotes and self._is_quote(text, raw_text):
             return False
+        combined = self._normalize_entry_text(text, raw_text)
+        exclude_keywords = subscription.exclude_keywords or ()
+        if exclude_keywords and any(keyword in combined for keyword in exclude_keywords):
+            return False
+        include_keywords = subscription.include_keywords or ()
+        if include_keywords and not any(keyword in combined for keyword in include_keywords):
+            return False
         return True
+
+    def _normalize_entry_text(self, text: str, raw_text: str) -> str:
+        parts: list[str] = []
+        if text:
+            parts.append(normalize_keyword_text(text))
+        if raw_text:
+            cleaned = self._HTML_TAG_PATTERN.sub(" ", raw_text)
+            parts.append(normalize_keyword_text(cleaned))
+        return " ".join(part for part in parts if part)
 
     @staticmethod
     def _is_repost(text: str) -> bool:

@@ -95,3 +95,29 @@ def test_is_quote_detection() -> None:
     }
     assert TweetPoller._is_quote(entry["text"], entry["raw_text"])
     assert not TweetPoller._is_quote("ノーマル投稿", "<div>本文</div>")
+
+
+def test_keyword_filters() -> None:
+    poller = TweetPoller(DummyNotifier(), DummyStore(), DummyRssHubClient([[{}]]))
+    entry = {"text": "New feature release", "raw_text": "<div>Feature</div>"}
+    sub = Subscription(
+        channel_id=123,
+        account="foo",
+        interval_seconds=60,
+        include_keywords=("feature",),
+        exclude_keywords=("spam",),
+    )
+    assert poller._should_include(entry, sub)
+
+    entry_spam = {"text": "Spammy feature", "raw_text": "<div>spam</div>"}
+    assert not poller._should_include(entry_spam, sub)
+
+    sub_only_include = Subscription(
+        channel_id=123,
+        account="foo",
+        interval_seconds=60,
+        include_keywords=("release",),
+    )
+    assert poller._should_include(entry, sub_only_include)
+    entry_other = {"text": "something else", "raw_text": "<div></div>"}
+    assert not poller._should_include(entry_other, sub_only_include)

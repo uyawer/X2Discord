@@ -2,7 +2,9 @@ import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from .utils import normalize_keywords
 
 
 @dataclass(frozen=True)
@@ -12,6 +14,8 @@ class Subscription:
     interval_seconds: int
     include_reposts: bool = False
     include_quotes: bool = False
+    include_keywords: Tuple[str, ...] = ()
+    exclude_keywords: Tuple[str, ...] = ()
     thread_id: Optional[int] = None
     start_offset_minutes: int = 0
     last_tweet_id: Optional[str] = None
@@ -73,6 +77,8 @@ class SubscriptionStore:
         interval_seconds: Optional[int] = None,
         include_reposts: bool = False,
         include_quotes: bool = False,
+        include_keywords: Iterable[str] | None = None,
+        exclude_keywords: Iterable[str] | None = None,
         start_offset_minutes: int = 0,
     ) -> Subscription:
         normalized = self._normalize_account(account)
@@ -92,6 +98,8 @@ class SubscriptionStore:
                 "interval_seconds": interval,
                 "include_reposts": include_reposts,
                 "include_quotes": include_quotes,
+                "include_keywords": [*normalize_keywords(include_keywords)],
+                "exclude_keywords": [*normalize_keywords(exclude_keywords)],
                 "start_offset_minutes": start_offset_minutes,
                 "last_tweet_id": existing.get("last_tweet_id") if existing else None,
             }
@@ -106,6 +114,8 @@ class SubscriptionStore:
             interval_seconds=interval,
             include_reposts=include_reposts,
             include_quotes=include_quotes,
+            include_keywords=tuple(entry["include_keywords"]),
+            exclude_keywords=tuple(entry["exclude_keywords"]),
             start_offset_minutes=start_offset_minutes,
         )
 
@@ -116,6 +126,8 @@ class SubscriptionStore:
         interval_seconds: Optional[int] = None,
         include_reposts: Optional[bool] = None,
         include_quotes: Optional[bool] = None,
+        include_keywords: Iterable[str] | None = None,
+        exclude_keywords: Iterable[str] | None = None,
     ) -> Subscription:
         normalized = self._normalize_account(account)
         async with self._lock:
@@ -135,6 +147,10 @@ class SubscriptionStore:
                 updated["include_reposts"] = include_reposts
             if include_quotes is not None:
                 updated["include_quotes"] = include_quotes
+            if include_keywords is not None:
+                updated["include_keywords"] = [*normalize_keywords(include_keywords)]
+            if exclude_keywords is not None:
+                updated["exclude_keywords"] = [*normalize_keywords(exclude_keywords)]
             existing.update(updated)
             self._save()
         return Subscription(
@@ -143,6 +159,8 @@ class SubscriptionStore:
             interval_seconds=interval,
             include_reposts=existing.get("include_reposts", False),
             include_quotes=existing.get("include_quotes", False),
+            include_keywords=tuple(existing.get("include_keywords", [])),
+            exclude_keywords=tuple(existing.get("exclude_keywords", [])),
             start_offset_minutes=existing.get("start_offset_minutes", 0),
             thread_id=existing.get("thread_id"),
             last_tweet_id=existing.get("last_tweet_id"),
@@ -183,6 +201,8 @@ class SubscriptionStore:
                                 interval_seconds=interval_seconds,
                                 include_reposts=entry.get("include_reposts", False),
                                 include_quotes=entry.get("include_quotes", False),
+                                include_keywords=tuple(entry.get("include_keywords", [])),
+                                exclude_keywords=tuple(entry.get("exclude_keywords", [])),
                                 start_offset_minutes=entry.get("start_offset_minutes", 0),
                                 thread_id=entry.get("thread_id"),
                                 last_tweet_id=entry.get("last_tweet_id"),
@@ -205,6 +225,8 @@ class SubscriptionStore:
                             interval_seconds=interval_seconds,
                             include_reposts=entry.get("include_reposts", False),
                             include_quotes=entry.get("include_quotes", False),
+                            include_keywords=tuple(entry.get("include_keywords", [])),
+                            exclude_keywords=tuple(entry.get("exclude_keywords", [])),
                             start_offset_minutes=entry.get("start_offset_minutes", 0),
                             thread_id=entry.get("thread_id"),
                             last_tweet_id=entry.get("last_tweet_id"),

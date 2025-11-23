@@ -9,6 +9,8 @@ from discord.abc import Messageable
 
 from .rsshub_client import RssHubClient
 from .store import SubscriptionStore
+from .utils import parse_keyword_input
+
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,8 @@ class DiscordNotifier(discord.Client):
             polling="監視間隔（秒単位。省略時は60秒）",
             include_reposts="リポストの有無（default:false）",
             include_quotes="引用リポストの有無（default:false）",
+            include_keywords="投稿に含まれると連携されるキーワード（カンマ区切り）",
+            exclude_keywords="投稿に含まれると連携を除外するキーワード（カンマ区切り）",
         )
         async def add(
             interaction: discord.Interaction,
@@ -111,6 +115,8 @@ class DiscordNotifier(discord.Client):
             polling: Optional[int] = None,
             include_reposts: bool = False,
             include_quotes: bool = False,
+            include_keywords: str | None = None,
+            exclude_keywords: str | None = None,
         ) -> None:
             channel_id = interaction.channel_id
             if channel_id is None:
@@ -134,6 +140,8 @@ class DiscordNotifier(discord.Client):
                     interval_seconds=interval,
                     include_reposts=include_reposts,
                     include_quotes=include_quotes,
+                    include_keywords=parse_keyword_input(include_keywords),
+                    exclude_keywords=parse_keyword_input(exclude_keywords),
                 )
             except ValueError as exc:
                 await interaction.followup.send(str(exc), ephemeral=True)
@@ -162,6 +170,8 @@ class DiscordNotifier(discord.Client):
             polling="監視間隔（秒単位。省略すると維持）",
             include_reposts="リポストの有無（省略すると維持）",
             include_quotes="引用リポストの有無（省略すると維持）",
+            include_keywords="投稿に含まれると連携されるキーワード（カンマ区切り）",
+            exclude_keywords="投稿に含まれると連携を除外するキーワード（カンマ区切り）",
         )
         async def edit(
             interaction: discord.Interaction,
@@ -169,6 +179,8 @@ class DiscordNotifier(discord.Client):
             polling: Optional[int] = None,
             include_reposts: Optional[bool] = None,
             include_quotes: Optional[bool] = None,
+            include_keywords: str | None = None,
+            exclude_keywords: str | None = None,
         ) -> None:
             channel_id = interaction.channel_id
             if channel_id is None:
@@ -185,6 +197,8 @@ class DiscordNotifier(discord.Client):
                     interval_seconds=polling,
                     include_reposts=include_reposts,
                     include_quotes=include_quotes,
+                    include_keywords=parse_keyword_input(include_keywords) if include_keywords is not None else None,
+                    exclude_keywords=parse_keyword_input(exclude_keywords) if exclude_keywords is not None else None,
                 )
             except ValueError as exc:
                 await interaction.followup.send(str(exc), ephemeral=True)
@@ -249,6 +263,8 @@ class DiscordNotifier(discord.Client):
                     f"・{sub.account} / {self._format_interval(sub.interval_seconds)}"
                     f" / リポスト:{'あり' if sub.include_reposts else 'なし'}"
                     f" / 引用:{'あり' if sub.include_quotes else 'なし'}"
+                    f" / キーワード:{', '.join(sub.include_keywords) if sub.include_keywords else 'なし'}"
+                    f" / 除外キーワード:{', '.join(sub.exclude_keywords) if sub.exclude_keywords else 'なし'}"
                 )
                 lines.append(line)
             text = "このチャンネルで監視してるアカウント一覧やで:\n" + "\n".join(lines)
