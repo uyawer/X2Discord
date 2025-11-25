@@ -48,7 +48,7 @@ docker run --env-file .env -p 8000:8000 \
 docker compose up -d
 ```
 
-この Compose は `x2discord` のみを起動するため、RSSHub は別リポジトリ・ホストで稼働させておく必要があります。ホストの `http://localhost:1200` に RSSHub を立ち上げている場合、コンテナ内からアクセスするには `.env` の `RSSHUB_BASE_URL` を `http://host.docker.internal:1200`（Windows/macOS）またはホストIPに設定してください。
+ホストの `http://localhost:1200` に RSSHub を立ち上げている場合、コンテナ内からアクセスするには `.env` の `RSSHUB_BASE_URL` を `http://host.docker.internal:1200`（Windows/macOS）またはホストIPに設定してください。
 
 ## 動作確認
 起動後 `GET /health` が `{"status": "ok"}` を返すか確認してください。
