@@ -22,17 +22,9 @@ class DummyNotifier:
 
 
 class DummyStore:
-    def __init__(self) -> None:
-        self.last_ids: dict[tuple[int, str], str] = {}
-
     async def get_subscriptions(self) -> list[Subscription]:
         return []
 
-    async def get_last_tweet_id(self, channel_id: int, account: str) -> str | None:
-        return self.last_ids.get((channel_id, account))
-
-    async def set_last_tweet_id(self, channel_id: int, account: str, tweet_id: str) -> None:
-        self.last_ids[(channel_id, account)] = tweet_id
 
 
 class DummyRssHubClient:
@@ -63,15 +55,16 @@ async def test_duplicate_link_only_sent_once() -> None:
     subscription = Subscription(channel_id=123, account="foo", interval_seconds=60)
     state = {"next_run": 0.0, "last_id": "initial", "backoff_multiplier": 1}
 
-    # Redis無しの場合、重複チェックはlast_tweet_idのみに依存
+    # Redis無しの場合、重複チェックは無効（last_idのみでフィルタリング）
     await poller._poll_subscription(subscription, state)
     assert len(notifier.sent_messages) == 1
     assert notifier.sent_messages[0][3] == "https://x.com/post/1"
 
-    # 2回目のポーリング - last_idで重複を防ぐ
+    # 2回目のポーリング - last_idで古いポストは除外される
     await poller._poll_subscription(subscription, state)
-    # last_idがfirstに更新されているので、secondは新規として検出される
-    assert len(notifier.sent_messages) == 2  # secondも送信される（Redisがないため）
+    # last_idがfirstに更新されているので、それより古いものは除外される
+    # ただしsecondは同じリンクだがIDが違うので新規として検出される（Redisがないため）
+    assert len(notifier.sent_messages) == 2
 
 
 def test_is_repost_detection() -> None:

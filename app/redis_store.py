@@ -94,6 +94,35 @@ class RedisLinkStore:
             logger.warning("Failed to clear channel links in Redis: %s", exc)
             return False
 
+    def _get_last_tweet_key(self, channel_id: int, account: str) -> str:
+        """last_tweet_id用のRedisキーを生成"""
+        return f"x2discord:last_tweet:{channel_id}:{account}"
+
+    async def get_last_tweet_id(self, channel_id: int, account: str) -> str | None:
+        """最後に処理したツイートIDを取得"""
+        if not self._client:
+            return None
+
+        try:
+            key = self._get_last_tweet_key(channel_id, account)
+            return await self._client.get(key)
+        except Exception as exc:
+            logger.warning("Failed to get last_tweet_id from Redis: %s", exc)
+            return None
+
+    async def set_last_tweet_id(self, channel_id: int, account: str, tweet_id: str) -> bool:
+        """最後に処理したツイートIDを保存"""
+        if not self._client:
+            return False
+
+        try:
+            key = self._get_last_tweet_key(channel_id, account)
+            await self._client.set(key, tweet_id)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to set last_tweet_id in Redis: %s", exc)
+            return False
+
     @property
     def is_connected(self) -> bool:
         """Redis接続が有効かどうか"""

@@ -18,7 +18,6 @@ class Subscription:
     exclude_keywords: Tuple[str, ...] = ()
     thread_id: Optional[int] = None
     start_offset_minutes: int = 0
-    last_tweet_id: Optional[str] = None
 
 
 class SubscriptionStore:
@@ -101,7 +100,6 @@ class SubscriptionStore:
                 "include_keywords": [*normalize_keywords(include_keywords)],
                 "exclude_keywords": [*normalize_keywords(exclude_keywords)],
                 "start_offset_minutes": start_offset_minutes,
-                "last_tweet_id": existing.get("last_tweet_id") if existing else None,
             }
             if existing:
                 existing.update(entry)
@@ -163,7 +161,6 @@ class SubscriptionStore:
             exclude_keywords=tuple(existing.get("exclude_keywords", [])),
             start_offset_minutes=existing.get("start_offset_minutes", 0),
             thread_id=existing.get("thread_id"),
-            last_tweet_id=existing.get("last_tweet_id"),
         )
 
     def normalize_account(self, account: str) -> str:
@@ -205,7 +202,6 @@ class SubscriptionStore:
                                 exclude_keywords=tuple(entry.get("exclude_keywords", [])),
                                 start_offset_minutes=entry.get("start_offset_minutes", 0),
                                 thread_id=entry.get("thread_id"),
-                                last_tweet_id=entry.get("last_tweet_id"),
                             )
                         )
             return result
@@ -227,28 +223,9 @@ class SubscriptionStore:
                             include_quotes=entry.get("include_quotes", False),
                             include_keywords=tuple(entry.get("include_keywords", [])),
                             exclude_keywords=tuple(entry.get("exclude_keywords", [])),
-                            start_offset_minutes=entry.get("start_offset_minutes", 0),
                             thread_id=entry.get("thread_id"),
-                            last_tweet_id=entry.get("last_tweet_id"),
                         )
                     )
             return result
 
-    async def get_last_tweet_id(self, channel_id: int, account: str) -> Optional[str]:
-        normalized = self._normalize_account(account)
-        async with self._lock:
-            bucket = self._data.get(str(channel_id), [])
-            for entry in bucket:
-                if entry.get("account") == normalized:
-                    return entry.get("last_tweet_id")
-        return None
 
-    async def set_last_tweet_id(self, channel_id: int, account: str, tweet_id: str) -> None:
-        normalized = self._normalize_account(account)
-        async with self._lock:
-            bucket = self._data.get(str(channel_id), [])
-            for entry in bucket:
-                if entry.get("account") == normalized:
-                    entry["last_tweet_id"] = tweet_id
-                    self._save()
-                    return

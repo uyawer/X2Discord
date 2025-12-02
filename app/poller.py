@@ -63,24 +63,15 @@ class TweetPoller:
                 "backoff_multiplier": 1,
             },
         )
-        # subscriptionオブジェクトから直接last_tweet_idを取得
+        # Redisからlast_tweet_idを取得
         if state.get("last_id") is None:
-            if subscription.last_tweet_id:
-                state["last_id"] = subscription.last_tweet_id
-                self._last_seen[subscription.account] = subscription.last_tweet_id
-                logger.info(
-                    "Initialized last_tweet_id for %s in channel %s: %s",
-                    subscription.account,
-                    subscription.channel_id,
-                    subscription.last_tweet_id,
-                )
-            else:
-                persisted = await self.store.get_last_tweet_id(subscription.channel_id, subscription.account)
+            if self.redis_store and self.redis_store.is_connected:
+                persisted = await self.redis_store.get_last_tweet_id(subscription.channel_id, subscription.account)
                 if persisted:
                     state["last_id"] = persisted
                     self._last_seen[subscription.account] = persisted
                     logger.info(
-                        "Loaded persisted last_tweet_id for %s in channel %s: %s",
+                        "Loaded last_tweet_id from Redis for %s in channel %s: %s",
                         subscription.account,
                         subscription.channel_id,
                         persisted,
@@ -120,9 +111,11 @@ class TweetPoller:
         if not seen_id:
             state["last_id"] = latest_id
             self._last_seen[subscription.account] = latest_id
-            await self.store.set_last_tweet_id(
-                subscription.channel_id, subscription.account, latest_id
-            )
+            # Redisに保存
+            if self.redis_store and self.redis_store.is_connected:
+                await self.redis_store.set_last_tweet_id(
+                    subscription.channel_id, subscription.account, latest_id
+                )
             logger.info(
                 "First poll for %s in channel %s, initialized last_tweet_id to %s (no posts sent)",
                 subscription.account,
@@ -158,9 +151,11 @@ class TweetPoller:
         if not new_posts:
             state["last_id"] = latest_id
             self._last_seen[subscription.account] = latest_id
-            await self.store.set_last_tweet_id(
-                subscription.channel_id, subscription.account, latest_id
-            )
+            # Redisに保存
+            if self.redis_store and self.redis_store.is_connected:
+                await self.redis_store.set_last_tweet_id(
+                    subscription.channel_id, subscription.account, latest_id
+                )
             logger.debug(
                 "No new posts to send for %s in channel %s, updated last_tweet_id to %s",
                 subscription.account,
@@ -186,9 +181,11 @@ class TweetPoller:
 
         state["last_id"] = latest_id
         self._last_seen[subscription.account] = latest_id
-        await self.store.set_last_tweet_id(
-            subscription.channel_id, subscription.account, latest_id
-        )
+        # Redisに保存
+        if self.redis_store and self.redis_store.is_connected:
+            await self.redis_store.set_last_tweet_id(
+                subscription.channel_id, subscription.account, latest_id
+            )
         logger.info(
             "Updated last_tweet_id for %s in channel %s to %s",
             subscription.account,

@@ -109,16 +109,23 @@ docker run --env-file .env -p 8000:8000 \
         "include_reposts": false,
         "include_quotes": false,
         "include_keywords": ["新作", "Luna"],
-        "exclude_keywords": ["ネタバレ"],
-        "last_tweet_id": null
+        "exclude_keywords": ["ネタバレ"]
       }
     ]
   }
 }
 ```
 
-## サブスクリプション永続化
-アプリは `SUBSCRIPTIONS_PATH` で指定された JSON ファイルに設定を保存します。Botを立ち上げ直しても最後の監視リストを引き継ぎます。
+## データ永続化
+### 設定の永続化
+アプリは `SUBSCRIPTIONS_PATH` で指定された JSON ファイルに**設定**を保存します（アカウント、間隔、フィルターなど）。
+
+### 状態の永続化
+実行時の**状態**（最後に処理したツイートID、送信済みリンク）は**Redisに保存**されます：
+- `last_tweet_id`: 各アカウントの最後に処理したツイートID
+- `sent_links`: 各チャンネルで送信済みのリンク履歴（最大1000件）
+
+既存の `subscriptions.json` に `last_tweet_id` が含まれている場合、初回起動時に自動的にRedisに移行されます。
 
 ## テスト
 ```bash
