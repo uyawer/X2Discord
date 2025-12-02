@@ -25,6 +25,10 @@ class Settings(BaseSettings):
         description="許容する最小間隔（秒）",
     )
     subscriptions_path: Path = Field(Path("subscriptions.json"), description="サブスクリプション永続化ファイル")
+    redis_url: str = Field(
+        "redis://localhost:6379/0",
+        description="Redis接続URL（送信済みリンクの永続化に使用）",
+    )
     guild_ids_str: str | None = Field(
         None,
         alias="GUILD_IDS",

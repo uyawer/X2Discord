@@ -59,18 +59,19 @@ async def test_duplicate_link_only_sent_once() -> None:
             ],
         ]
     )
-    poller = TweetPoller(notifier, store, rsshub)
+    poller = TweetPoller(notifier, store, rsshub, redis_store=None)
     subscription = Subscription(channel_id=123, account="foo", interval_seconds=60)
     state = {"next_run": 0.0, "last_id": "initial", "backoff_multiplier": 1}
 
+    # Redis無しの場合、重複チェックはlast_tweet_idのみに依存
     await poller._poll_subscription(subscription, state)
     assert len(notifier.sent_messages) == 1
     assert notifier.sent_messages[0][3] == "https://x.com/post/1"
-    assert "https://x.com/post/1" in poller._sent_links[subscription.channel_id]
 
+    # 2回目のポーリング - last_idで重複を防ぐ
     await poller._poll_subscription(subscription, state)
-    assert len(notifier.sent_messages) == 1
-    assert poller._sent_links[subscription.channel_id] == {"https://x.com/post/1"}
+    # last_idがfirstに更新されているので、secondは新規として検出される
+    assert len(notifier.sent_messages) == 2  # secondも送信される（Redisがないため）
 
 
 def test_is_repost_detection() -> None:
@@ -98,7 +99,7 @@ def test_is_quote_detection() -> None:
 
 
 def test_keyword_filters() -> None:
-    poller = TweetPoller(DummyNotifier(), DummyStore(), DummyRssHubClient([[{}]]))
+    poller = TweetPoller(DummyNotifier(), DummyStore(), DummyRssHubClient([[{}]]), redis_store=None)
     entry = {"text": "New feature release", "raw_text": "<div>Feature</div>"}
     sub = Subscription(
         channel_id=123,

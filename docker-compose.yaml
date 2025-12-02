@@ -5,12 +5,13 @@ services:
     image: x2discord
     build: .
     env_file: .env
-    environment:
-      RSSHUB_BASE_URL: http://rsshub:1200
     ports:
       - "8000:8000"
     volumes:
       - ./subscriptions.json:/app/subscriptions.json
+    depends_on:
+      - redis
+      - rsshub
     restart: unless-stopped
 
   rsshub:

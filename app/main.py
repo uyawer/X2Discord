@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from .config import Settings
 from .discord_bot import DiscordNotifier
 from .poller import TweetPoller
+from .redis_store import RedisLinkStore
 from .rsshub_client import RssHubClient
 from .store import SubscriptionStore
 
@@ -19,19 +20,25 @@ store = SubscriptionStore(
     min_interval_seconds=settings.min_poll_interval_seconds,
 )
 rsshub_client = RssHubClient(settings.rsshub_base_url)
+redis_store = RedisLinkStore(
+    settings.redis_url,
+    max_links_per_channel=TweetPoller.MAX_SENT_LINKS_PER_CHANNEL,
+)
 notifier = DiscordNotifier(
     settings.discord_bot_token,
     store,
     rsshub_client,
     guild_ids=settings.guild_ids,
 )
-poller = TweetPoller(notifier, store, rsshub_client)
+poller = TweetPoller(notifier, store, rsshub_client, redis_store)
 app = FastAPI(title="Twitter to Discord Bridge")
 
 
 @app.on_event("startup")
 async def startup_event() -> None:
     logger.info("Starting Discord bot and tweet poller")
+    # Redisに接続（失敗してもアプリは起動する）
+    await redis_store.connect()
     await notifier.login(settings.discord_bot_token)
     bot_task = asyncio.create_task(notifier.connect())
     app.state.bot_task = bot_task
@@ -59,6 +66,7 @@ async def shutdown_event() -> None:
             pass
     await notifier.close()
     await rsshub_client.close()
+    await redis_store.close()
 
 
 @app.get("/health")

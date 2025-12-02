@@ -6,6 +6,7 @@ FastAPIサーバーがローカルのRSSHub経由で指定アカウントの投�
 - RSSHubが提供する `RSSHUB_BASE_URL/twitter/user/<ユーザーID>` を周期的に叩いて投稿を取得
 - Discord Botを `/add`/`/remove` で制御し、チャンネル毎に任意のアカウントを監視
 - 永続化された `subscriptions.json` に設定を保存し、再起動後も定義を保持
+- **Redisを使用した送信済みリンクの永続化** - アプリ再起動後も重複投稿を防止
 - `include_reposts`/`include_quotes` は本文中の `RT`/`引用` などのキーワードで除外できます
 - `include_keywords`/`exclude_keywords` で任意の文字列を含む/含まない投稿だけ通知できます
 
@@ -25,6 +26,7 @@ pip install -r requirements.txt
 ## 環境変数
 - `DISCORD_BOT_TOKEN` : Botのトークン（必須）
 - `RSSHUB_BASE_URL` : RSSHubのベースURL（デフォルト `http://localhost:1200`）
+- `REDIS_URL` : Redis接続URL（デフォルト `redis://localhost:6379/0`、送信済みリンクの永続化に使用）
 - `DEFAULT_POLL_INTERVAL_SECONDS` : `/add` で `polling` を省略した際のデフォルト（60秒）
 - `MIN_POLL_INTERVAL_SECONDS` : 指定可能な最小値（60秒）
 - `SUBSCRIPTIONS_PATH` : 監視設定を保存するファイルパス（省略時 `subscriptions.json`）
@@ -36,19 +38,39 @@ python -m uvicorn app.main:app --reload
 ```
 
 ## Docker
+⚠️ **重要**: X2Discordは**Redisが必須**です。送信済みリンクの永続化に使用し、重複投稿を防止します。
+
+### Docker Composeで起動（推奨）
+```bash
+# .env.exampleをコピーして設定
+cp .env.example .env
+# .envを編集してDISCORD_BOT_TOKENなどを設定
+
+# 全サービスを起動（X2Discord、RSSHub、Redis、Browserless）
+docker compose up -d
+```
+
+`.env`の`RSSHUB_BASE_URL`と`REDIS_URL`はDocker Compose用にデフォルトで設定されています：
+- `RSSHUB_BASE_URL=http://rsshub:1200`（Docker内部のサービス名）
+- `REDIS_URL=redis://redis:6379/0`（Docker内部のサービス名）
+
+### 単体で起動する場合
 ```bash
 # Build the image
 docker build -t x2discord .
 
-# Run with explicit docker command
+# 別途Redisを起動しておく必要があります
+docker run -d --name redis -p 6379:6379 redis:alpine
+
+# .envでREDIS_URLとRSSHUB_BASE_URLをホスト接続用に変更
+# REDIS_URL=redis://host.docker.internal:6379/0
+# RSSHUB_BASE_URL=http://host.docker.internal:1200
+
+# X2Discordを起動
 docker run --env-file .env -p 8000:8000 \
 	-v ${PWD}/subscriptions.json:/app/subscriptions.json x2discord
-
-# Or use docker compose
-docker compose up -d
 ```
 
-ホストの `http://localhost:1200` に RSSHub を立ち上げている場合、コンテナ内からアクセスするには `.env` の `RSSHUB_BASE_URL` を `http://host.docker.internal:1200`（Windows/macOS）またはホストIPに設定してください。
 
 ## 動作確認
 起動後 `GET /health` が `{"status": "ok"}` を返すか確認してください。
