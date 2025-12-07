@@ -39,16 +39,19 @@ class RssHubClient:
         processed: List[Dict[str, str]] = []
         for idx, entry in enumerate(entries[:limit]):
             text = entry.get("description") or entry.get("summary") or entry.get("title") or ""
+            link = entry.get("link") or f"https://x.com/{normalized}"
             raw = {
-                "guid": entry.get("id") or entry.get("guid") or entry.get("link"),
+                "guid": entry.get("id") or entry.get("guid") or link,
                 "description": text,
-                "link": entry.get("link"),
+                "link": link,
             }
+            # リンクを優先してIDとして使用（重複検出の一貫性向上）
+            entry_id = link if link.startswith("http") else self._entry_id(raw, normalized, idx)
             processed.append(
                 {
-                    "id": self._entry_id(raw, normalized, idx),
+                    "id": entry_id,
                     "text": self._strip_html(text),
-                    "link": raw.get("link") or f"https://x.com/{normalized}",
+                    "link": link,
                     "raw_text": text,
                 }
             )
@@ -56,13 +59,20 @@ class RssHubClient:
 
     @classmethod
     def _entry_id(cls, raw: Dict[str, Any], normalized: str, index: int) -> str:
+        # まずリンクを確認（最も信頼性の高い一意識別子）
+        link = raw.get("link")
+        if link and isinstance(link, str) and link.startswith("http"):
+            return link
+        
+        # 次にguidを確認
         guid = raw.get("guid")
         if isinstance(guid, dict):
             candidate = guid.get("#text") or guid.get("value")
         else:
             candidate = guid
+        
         if not candidate:
-            candidate = raw.get("id") or raw.get("link") or f"{normalized}-{index}"
+            candidate = raw.get("id") or f"{normalized}-{index}"
         return str(candidate)
 
     @classmethod

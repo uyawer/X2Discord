@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 import time
-from collections import defaultdict, deque
 from typing import Dict, Optional, Tuple
 
 import httpx
@@ -18,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 class TweetPoller:
     ACCOUNT_MIN_INTERVAL_SECONDS = 30
-    MAX_SENT_LINKS_PER_CHANNEL = 1000  # 各チャンネルで記憶する最大リンク数
     _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 
     def __init__(
@@ -36,8 +34,6 @@ class TweetPoller:
         self._state: Dict[Tuple[int, str], Dict[str, object]] = {}
         self._last_seen: Dict[str, str] = {}
         self._account_last_call: Dict[str, float] = {}
-        # メモリキャッシュ（高速アクセス用）+ Redisへのフォールバック
-        self._sent_links_cache: Dict[int, deque] = defaultdict(lambda: deque(maxlen=self.MAX_SENT_LINKS_PER_CHANNEL))
 
     async def start(self) -> None:
         while not self._stop_event.is_set():
@@ -137,6 +133,7 @@ class TweetPoller:
             # IDまたはリンクが既に送信済みならスキップ（Redisとメモリキャッシュをチェック）
             already_sent = await self._is_already_sent(subscription.channel_id, entry_id, entry_link)
             if already_sent:
+                logger.info("Skipping duplicate post for %s: %s", subscription.account, entry_id or entry_link)
                 continue
 
             # 送信用のキーはリンクを優先、なければID
@@ -283,7 +280,7 @@ class TweetPoller:
         )
 
     async def _is_already_sent(self, channel_id: int, entry_id: str | None, entry_link: str | None) -> bool:
-        """IDまたはリンクが既に送信済みかチェック（Redisのみ）"""
+        """IDまたはリンクが既に送信済みかチェック（Redis）"""
         if not self.redis_store or not self.redis_store.is_connected:
             logger.warning("Redis is not available, cannot check for duplicates")
             return False
@@ -301,7 +298,7 @@ class TweetPoller:
     async def _record_sent_link(self, channel_id: int, link: str) -> None:
         """送信済みリンクをRedisに記録"""
         if not self.redis_store or not self.redis_store.is_connected:
-            logger.warning("Redis is not available, cannot persist sent link: %s", link)
+            logger.warning("Redis is not available, cannot record sent link: %s", link)
             return
 
         await self.redis_store.add_link(channel_id, link)

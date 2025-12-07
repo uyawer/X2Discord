@@ -44,10 +44,10 @@ async def test_duplicate_link_only_sent_once() -> None:
     store = DummyStore()
     rsshub = DummyRssHubClient(
         [
-            [{"id": "first", "link": "https://x.com/post/1", "text": "First"}],
+            [{"id": "https://x.com/post/1", "link": "https://x.com/post/1", "text": "First"}],
             [
-                {"id": "second", "link": "https://x.com/post/1", "text": "Duplicate"},
-                {"id": "first", "link": "https://x.com/post/1", "text": "First"},
+                {"id": "https://x.com/post/2", "link": "https://x.com/post/2", "text": "Second"},
+                {"id": "https://x.com/post/1", "link": "https://x.com/post/1", "text": "First duplicate"},
             ],
         ]
     )
@@ -55,16 +55,16 @@ async def test_duplicate_link_only_sent_once() -> None:
     subscription = Subscription(channel_id=123, account="foo", interval_seconds=60)
     state = {"next_run": 0.0, "last_id": "initial", "backoff_multiplier": 1}
 
-    # Redis無しの場合、重複チェックは無効（last_idのみでフィルタリング）
+    # 1回目のポーリング - 初回は1件送信
     await poller._poll_subscription(subscription, state)
     assert len(notifier.sent_messages) == 1
     assert notifier.sent_messages[0][3] == "https://x.com/post/1"
 
-    # 2回目のポーリング - last_idで古いポストは除外される
+    # 2回目のポーリング - Redisがないため重複チェックなし、last_idでのみフィルタリング
     await poller._poll_subscription(subscription, state)
-    # last_idがfirstに更新されているので、それより古いものは除外される
-    # ただしsecondは同じリンクだがIDが違うので新規として検出される（Redisがないため）
+    # post/2は新規として検出される（last_idより新しいため）
     assert len(notifier.sent_messages) == 2
+    assert notifier.sent_messages[1][3] == "https://x.com/post/2"
 
 
 def test_is_repost_detection() -> None:

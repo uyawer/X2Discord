@@ -46,7 +46,8 @@ def test_fetch_latest_posts_parses_xml(monkeypatch: pytest.MonkeyPatch) -> None:
         client = RssHubClient("http://rsshub.local")
         posts = await client.fetch_latest_posts("test")
         await client.close()
-        assert posts[0]["id"] == "feed-guid-123"
+        # リンクが優先されてIDとして使用される
+        assert posts[0]["id"] == "https://x.com/test/123"
         assert posts[0]["text"] == "Hello RSS"
         assert posts[0]["link"] == "https://x.com/test/123"
 

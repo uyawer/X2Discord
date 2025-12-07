@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 class RedisLinkStore:
     """Redisを使用して送信済みリンクを永続化するストア"""
 
-    def __init__(self, redis_url: str, max_links_per_channel: int = 1000):
+    def __init__(self, redis_url: str, max_links_per_channel: int = 1000, ttl_days: int = 30):
         self.redis_url = redis_url
         self.max_links_per_channel = max_links_per_channel
+        self.ttl_seconds = ttl_days * 24 * 60 * 60  # 日数を秒に変換
         self._client: Optional[redis.Redis] = None
 
     async def connect(self) -> None:
@@ -46,25 +47,34 @@ class RedisLinkStore:
 
         try:
             key = self._get_key(channel_id)
-            # リストの左側に追加
-            await self._client.lpush(key, link)
-            # サイズ制限を適用（古いものを削除）
-            await self._client.ltrim(key, 0, self.max_links_per_channel - 1)
+            # SETに追加（O(1)）
+            await self._client.sadd(key, link)
+            # TTLを設定して古いデータを自動削除
+            await self._client.expire(key, self.ttl_seconds)
+            
+            # サイズ制限を確認（必要に応じて古いメンバーを削除）
+            size = await self._client.scard(key)
+            if size > self.max_links_per_channel:
+                # 超過分をランダムに削除（SETなので順序がないため）
+                excess = size - self.max_links_per_channel
+                members = await self._client.srandmember(key, excess)
+                if members:
+                    await self._client.srem(key, *members)
+                    logger.info("Removed %d excess links from channel %d", excess, channel_id)
             return True
         except Exception as exc:
             logger.warning("Failed to add link to Redis: %s", exc)
             return False
 
     async def has_link(self, channel_id: int, link: str) -> bool:
-        """リンクが既に送信済みかチェック"""
+        """リンクが既に送信済みかチェック（O(1)）"""
         if not self._client:
             return False
 
         try:
             key = self._get_key(channel_id)
-            # リスト内を検索（O(n)だが、サイズが限定されているので許容範囲）
-            links = await self._client.lrange(key, 0, -1)
-            return link in links
+            # SETのメンバーシップチェック（O(1)）
+            return await self._client.sismember(key, link)
         except Exception as exc:
             logger.warning("Failed to check link in Redis: %s", exc)
             return False
@@ -76,7 +86,8 @@ class RedisLinkStore:
 
         try:
             key = self._get_key(channel_id)
-            return await self._client.lrange(key, 0, -1)
+            members = await self._client.smembers(key)
+            return list(members) if members else []
         except Exception as exc:
             logger.warning("Failed to get links from Redis: %s", exc)
             return []

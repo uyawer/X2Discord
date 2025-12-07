@@ -20,6 +20,7 @@ services:
     ports:
       - '1200:1200'
     environment:
+      CACHE_EXPIRE: '180'
       NODE_ENV: production
       CACHE_TYPE: redis
       REDIS_URL: 'redis://redis:6379/'

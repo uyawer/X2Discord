@@ -22,7 +22,7 @@ store = SubscriptionStore(
 rsshub_client = RssHubClient(settings.rsshub_base_url)
 redis_store = RedisLinkStore(
     settings.redis_url,
-    max_links_per_channel=TweetPoller.MAX_SENT_LINKS_PER_CHANNEL,
+    max_links_per_channel=1000,  # 各チャンネルで記憶する最大リンク数
 )
 notifier = DiscordNotifier(
     settings.discord_bot_token,
