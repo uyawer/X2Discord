@@ -10,6 +10,7 @@ class RssHubClient:
     MINIMUM_RESULTS = 1
     MAXIMUM_RESULTS = 100
     _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+    _STATUS_ID_PATTERN = re.compile(r"/status/(\d+)")
 
     def __init__(self, base_url: str = "http://localhost:1200", refresh_seconds: int | None = None):  # pragma: no cover - HTTP client wrapper
         normalized = base_url.rstrip("/")
@@ -40,13 +41,20 @@ class RssHubClient:
         for idx, entry in enumerate(entries[:limit]):
             text = entry.get("description") or entry.get("summary") or entry.get("title") or ""
             link = entry.get("link") or f"https://x.com/{normalized}"
+            # RSSHubがユーザー名として"undefined"を返すことがあるため正しいアカウント名に修正
+            if "/undefined/" in link:
+                link = link.replace("/undefined/", f"/{normalized}/")
             raw = {
                 "guid": entry.get("id") or entry.get("guid") or link,
                 "description": text,
                 "link": link,
             }
-            # リンクを優先してIDとして使用（重複検出の一貫性向上）
-            entry_id = link if link.startswith("http") else self._entry_id(raw, normalized, idx)
+            # ステータスID（数値）を正規の識別子として使用（URL変動に依存しない重複管理のため）
+            status_match = self._STATUS_ID_PATTERN.search(link)
+            if status_match:
+                entry_id = status_match.group(1)
+            else:
+                entry_id = link if link.startswith("http") else self._entry_id(raw, normalized, idx)
             processed.append(
                 {
                     "id": entry_id,

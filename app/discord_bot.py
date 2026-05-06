@@ -103,7 +103,7 @@ class DiscordNotifier(discord.Client):
         )
         @app_commands.describe(
             account="アカウントID（@を含めない）",
-            polling="監視間隔（秒単位。省略時は60秒）",
+            polling="監視間隔（秒単位。省略時は300秒）",
             include_reposts="リポストの有無（default:false）",
             include_quotes="引用リポストの有無（default:false）",
             include_keywords="投稿に含まれると連携されるキーワード（カンマ区切り）",

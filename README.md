@@ -1,4 +1,4 @@
-# Twitter to Discord Bridge
+# X to Discord Bridge
 
 FastAPIサーバーがローカルのRSSHub経由で指定アカウントの投稿を監視し、Discordのスラッシュコマンドを通してチャンネルに投げるブリッジです。
 
@@ -12,7 +12,7 @@ FastAPIサーバーがローカルのRSSHub経由で指定アカウントの投�
 
 ## RSSHubの準備
 1. `DIYgod/RSSHub` をクローンまたは既存環境を流用し、`docker compose up -d` などで `RSSHub` を起動します。ローカルで `http://localhost:1200` へアクセスできるようにしてください。
-2. RSSHubの `.env` で `TWITTER_USERNAME`/`TWITTER_PASSWORD`/`TWITTER_AUTH_TOKEN` などの認証情報を設定し、`/twitter/user/:id` ルートが動作することを確認してください（公式ドキュメント: https://docs.rsshub.app/）。
+2. RSSHubの `.env` で `TWITTER_USERNAME`/`TWITTER_PASSWORD`/`TWITTER_AUTH_TOKEN` などの認証情報を設定し、`/twitter/user/:id` ルートが動作することを確認してください（[公式ドキュメント](https://docs.rsshub.app/)）。
 3. 必要であれば `RSSHUB_BASE_URL` を `http://localhost:1200` 以外に向けます。
 
 ## セットアップ
@@ -27,8 +27,8 @@ pip install -r requirements.txt
 - `DISCORD_BOT_TOKEN` : Botのトークン（必須）
 - `RSSHUB_BASE_URL` : RSSHubのベースURL（デフォルト `http://localhost:1200`）
 - `REDIS_URL` : Redis接続URL（デフォルト `redis://localhost:6379/0`、送信済みリンクの永続化に使用）
-- `DEFAULT_POLL_INTERVAL_SECONDS` : `/add` で `polling` を省略した際のデフォルト（60秒）
-- `MIN_POLL_INTERVAL_SECONDS` : 指定可能な最小値（60秒）
+- `DEFAULT_POLL_INTERVAL_SECONDS` : `/add` で `polling` を省略した際のデフォルト（300秒）
+- `MIN_POLL_INTERVAL_SECONDS` : 指定可能な最小値（300秒）
 - `SUBSCRIPTIONS_PATH` : 監視設定を保存するファイルパス（省略時 `subscriptions.json`）
 - `GUILD_IDS` : カンマ区切りで指定するスラッシュコマンドを配布する Discord ギルド ID（省略するとグローバルコマンドになります）
 
@@ -40,19 +40,36 @@ python -m uvicorn app.main:app --reload
 ## Docker
 ⚠️ **重要**: X2Discordは**Redisが必須**です。送信済みリンクの永続化に使用し、重複投稿を防止します。
 
-### Docker Composeで起動（推奨）
+### Docker Composeで起動s
 ```bash
 # .env.exampleをコピーして設定
 cp .env.example .env
 # .envを編集してDISCORD_BOT_TOKENなどを設定
 
-# 全サービスを起動（X2Discord、RSSHub、Redis、Browserless）
-docker compose up -d
+# 全サービスを起動（初回はイメージのビルドも自動で行われます）
+docker compose up -d --build
 ```
 
 `.env`の`RSSHUB_BASE_URL`と`REDIS_URL`はDocker Compose用にデフォルトで設定されています：
 - `RSSHUB_BASE_URL=http://rsshub:1200`（Docker内部のサービス名）
 - `REDIS_URL=redis://redis:6379/0`（Docker内部のサービス名）
+
+## Podman
+PodmanでもDocker互換コマンドで実行できます。
+
+### Podman Composeで起動
+```bash
+# .env.exampleをコピーして設定
+cp .env.example .env
+# .envを編集してDISCORD_BOT_TOKENなどを設定
+
+# 全サービスを起動（初回はイメージのビルドも自動で行われます）
+podman compose up -d --build
+```
+
+### 注意事項
+- Podmanではデフォルトでrootlessモードで動作します
+- ポートバインディングが1024以下の場合は `sudo` が必要な場合があります
 
 ### 単体で起動する場合
 ```bash
@@ -93,7 +110,7 @@ docker run --env-file .env -p 8000:8000 \
 ## キーワードフィルタの例
 `/add` や `/edit` でキーワードを指定する際はカンマまたは改行で複数指定できます。
 ```
-/add account:coolexample polling:60 include_keywords:新作,アップデート exclude_keywords:ネタバレ,広告
+/add account:coolexample polling:300 include_keywords:新作,アップデート exclude_keywords:ネタバレ,広告
 ```
 上記は「新作」または「アップデート」を含む投稿だけ通知し、「ネタバレ」や「広告」を含んでいたら除外します。除外キーワードは許可キーワードより優先されるので、両方にマッチしていても通知されません。
 
@@ -105,7 +122,7 @@ docker run --env-file .env -p 8000:8000 \
     "123456": [
       {
         "account": "genshin_official",
-        "interval_seconds": 60,
+        "interval_seconds": 300,
         "include_reposts": false,
         "include_quotes": false,
         "include_keywords": ["新作", "Luna"],

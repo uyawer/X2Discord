@@ -16,12 +16,12 @@ class Settings(BaseSettings):
         description="RSSHubに `refresh` クエリを渡す秒数。省略するとデフォルトキャッシュを使う",
     )
     default_poll_interval_seconds: PositiveInt = Field(
-        60,
+        300,
         description="/add で polling を省略したときのデフォルト間隔（秒）",
         ge=1,
     )
     min_poll_interval_seconds: PositiveInt = Field(
-        60,
+        300,
         description="許容する最小間隔（秒）",
     )
     subscriptions_path: Path = Field(Path("subscriptions.json"), description="サブスクリプション永続化ファイル")

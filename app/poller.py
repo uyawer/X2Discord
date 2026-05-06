@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class TweetPoller:
     ACCOUNT_MIN_INTERVAL_SECONDS = 30
     _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+    _STATUS_ID_PATTERN = re.compile(r"/status/(\d+)")
 
     def __init__(
         self,
@@ -64,8 +65,10 @@ class TweetPoller:
             if self.redis_store and self.redis_store.is_connected:
                 persisted = await self.redis_store.get_last_tweet_id(subscription.channel_id, subscription.account)
                 if persisted:
-                    state["last_id"] = persisted
-                    self._last_seen[subscription.account] = persisted
+                    # 旧バージョンのRedisデータ（URL形式）をポストIDに正規化して後方互換を保つ
+                    normalized_id = self._normalize_to_post_id(persisted)
+                    state["last_id"] = normalized_id
+                    self._last_seen[subscription.account] = normalized_id
                     logger.info(
                         "Loaded last_tweet_id from Redis for %s in channel %s: %s",
                         subscription.account,
@@ -76,7 +79,7 @@ class TweetPoller:
             return
         if now < state["next_run"]:
             return
-        logger.info(
+        logger.debug(
             "Polling %s for channel %s (interval %s sec, next_run %.1f)",
             subscription.account,
             subscription.channel_id,
@@ -119,32 +122,27 @@ class TweetPoller:
                 latest_id,
             )
             return
-        new_posts: list[tuple[dict, str]] = []
+        new_posts: list[dict] = []
         for entry in posts:
             # 既に見たIDに到達したら、それ以降は古いポストなのでスキップ
             if seen_id and entry["id"] == seen_id:
                 logger.debug("Reached already seen post %s for %s", seen_id, subscription.account)
                 break
 
-            # 重複チェック用のキーを複数生成（IDとリンクの両方）
             entry_id = entry.get("id")
-            entry_link = entry.get("link")
-
-            # IDまたはリンクが既に送信済みならスキップ（Redisとメモリキャッシュをチェック）
-            already_sent = await self._is_already_sent(subscription.channel_id, entry_id, entry_link)
-            if already_sent:
-                logger.info("Skipping duplicate post for %s: %s", subscription.account, entry_id or entry_link)
+            if not entry_id:
+                logger.warning("Post has no id, skipping: %s", entry)
                 continue
 
-            # 送信用のキーはリンクを優先、なければID
-            send_key = entry_link or entry_id
-            if not send_key:
-                logger.warning("Post has no id or link, skipping: %s", entry)
+            # ポストIDが既に送信済みならスキップ（Redis）
+            already_sent = await self._is_already_sent(subscription.channel_id, entry_id)
+            if already_sent:
+                logger.info("Skipping duplicate post for %s: %s", subscription.account, entry_id)
                 continue
 
             if not self._should_include(entry, subscription):
                 continue
-            new_posts.append((entry, send_key))
+            new_posts.append(entry)
         if not new_posts:
             state["last_id"] = latest_id
             self._last_seen[subscription.account] = latest_id
@@ -160,7 +158,7 @@ class TweetPoller:
                 latest_id,
             )
             return
-        for entry, send_key in reversed(new_posts):
+        for entry in reversed(new_posts):
             await self.notifier.send_message(
                 subscription.channel_id,
                 subscription.account,
@@ -168,13 +166,9 @@ class TweetPoller:
                 entry.get("link", ""),
                 thread_id=subscription.thread_id,
             )
-            # IDとリンクの両方を記録して重複を防ぐ（RedisとメモリキャッシュへI）
-            await self._record_sent_link(subscription.channel_id, send_key)
-            if entry.get("id") and entry.get("id") != send_key:
-                await self._record_sent_link(subscription.channel_id, entry.get("id"))
-            if entry.get("link") and entry.get("link") != send_key:
-                await self._record_sent_link(subscription.channel_id, entry.get("link"))
-            logger.debug("Sent and recorded post %s for %s", send_key, subscription.account)
+            # ポストID（数値）のみRedisに記録して重複を防ぐ
+            await self._record_sent_link(subscription.channel_id, entry.get("id"))
+            logger.debug("Sent and recorded post %s for %s", entry.get("id"), subscription.account)
 
         state["last_id"] = latest_id
         self._last_seen[subscription.account] = latest_id
@@ -279,18 +273,20 @@ class TweetPoller:
             or "rsshub-quote" in raw_lower
         )
 
-    async def _is_already_sent(self, channel_id: int, entry_id: str | None, entry_link: str | None) -> bool:
-        """IDまたはリンクが既に送信済みかチェック（Redis）"""
+    @staticmethod
+    def _normalize_to_post_id(id_str: str) -> str:
+        """URLからステータスIDを抽出する（旧URL形式のRedisデータとの後方互換のため）"""
+        match = TweetPoller._STATUS_ID_PATTERN.search(id_str)
+        return match.group(1) if match else id_str
+
+    async def _is_already_sent(self, channel_id: int, entry_id: str | None) -> bool:
+        """ポストIDが既に送信済みかチェック（Redis）"""
         if not self.redis_store or not self.redis_store.is_connected:
             logger.warning("Redis is not available, cannot check for duplicates")
             return False
 
-        # IDとリンクの両方をチェック
         if entry_id and await self.redis_store.has_link(channel_id, entry_id):
-            logger.debug("Found duplicate in Redis (by ID): %s", entry_id)
-            return True
-        if entry_link and await self.redis_store.has_link(channel_id, entry_link):
-            logger.debug("Found duplicate in Redis (by link): %s", entry_link)
+            logger.debug("Found duplicate in Redis (by post ID): %s", entry_id)
             return True
 
         return False
