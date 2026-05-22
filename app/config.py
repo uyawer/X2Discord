@@ -29,6 +29,10 @@ class Settings(BaseSettings):
         "redis://localhost:6379/0",
         description="Redis接続URL（送信済みリンクの永続化に使用）",
     )
+    fxtwitter_poll_interval_seconds: PositiveInt = Field(
+        1800,
+        description="api.fxtwitter.com へのポーリング間隔（秒）。デフォルト30分",
+    )
     guild_ids_str: str | None = Field(
         None,
         alias="GUILD_IDS",

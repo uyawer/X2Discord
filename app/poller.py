@@ -7,6 +7,7 @@ from typing import Dict, Optional, Tuple
 import httpx
 
 from .discord_bot import DiscordNotifier
+from .fxtwitter_client import FxTwitterClient
 from .store import Subscription, SubscriptionStore
 from .rsshub_client import RssHubClient
 from .redis_store import RedisLinkStore
@@ -26,15 +27,20 @@ class TweetPoller:
         store: SubscriptionStore,
         rsshub_client: RssHubClient,
         redis_store: Optional[RedisLinkStore] = None,
+        fxtwitter_client: Optional[FxTwitterClient] = None,
+        fxtwitter_interval_seconds: int = 1800,
     ):
         self.notifier = notifier
         self.store = store
         self.rsshub_client = rsshub_client
         self.redis_store = redis_store
+        self.fxtwitter_client = fxtwitter_client
+        self.fxtwitter_interval_seconds = fxtwitter_interval_seconds
         self._stop_event = asyncio.Event()
         self._state: Dict[Tuple[int, str], Dict[str, object]] = {}
         self._last_seen: Dict[str, str] = {}
         self._account_last_call: Dict[str, float] = {}
+        self._fxt_state: Dict[Tuple[int, str], Dict[str, object]] = {}
 
     async def start(self) -> None:
         while not self._stop_event.is_set():
@@ -45,6 +51,8 @@ class TweetPoller:
             now = time.monotonic()
             for subscription in subscriptions:
                 await self._maybe_poll_subscription(subscription, now)
+                if self.fxtwitter_client:
+                    await self._maybe_poll_fxtwitter(subscription, now)
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
@@ -226,9 +234,18 @@ class TweetPoller:
     def _should_include(self, entry: dict, subscription: Subscription) -> bool:
         text = entry.get("text", "")
         raw_text = entry.get("raw_text", "")
-        if not subscription.include_reposts and self._is_repost(text):
+        # fxtwitter はメタデータフラグを持つ。ない場合はテキストヒューリスティクスで判定
+        is_repost = entry.get("is_repost")
+        if is_repost is not None:
+            if not subscription.include_reposts and is_repost:
+                return False
+        elif not subscription.include_reposts and self._is_repost(text):
             return False
-        if not subscription.include_quotes and self._is_quote(text, raw_text):
+        is_quote = entry.get("is_quote")
+        if is_quote is not None:
+            if not subscription.include_quotes and is_quote:
+                return False
+        elif not subscription.include_quotes and self._is_quote(text, raw_text):
             return False
         combined = self._normalize_entry_text(text, raw_text)
         exclude_keywords = subscription.exclude_keywords or ()
@@ -278,6 +295,87 @@ class TweetPoller:
         """URLからステータスIDを抽出する（旧URL形式のRedisデータとの後方互換のため）"""
         match = TweetPoller._STATUS_ID_PATTERN.search(id_str)
         return match.group(1) if match else id_str
+
+    # ------------------------------------------------------------------
+    # fxtwitter ポーリング
+    # ------------------------------------------------------------------
+
+    async def _maybe_poll_fxtwitter(self, subscription: Subscription, now: float) -> None:
+        key = (subscription.channel_id, subscription.account)
+        state = self._fxt_state.setdefault(
+            key,
+            {
+                "next_run": 0.0,
+                "top_cursor": None,
+                "initialized": False,
+            },
+        )
+        if now < state["next_run"]:
+            return
+        await self._poll_fxtwitter(subscription, state)
+
+    async def _poll_fxtwitter(self, subscription: Subscription, state: Dict[str, object]) -> None:
+        account = subscription.account
+        cursor: Optional[str] = state.get("top_cursor")  # type: ignore[assignment]
+        initialized: bool = bool(state.get("initialized"))
+        try:
+            posts, top_cursor = await self.fxtwitter_client.fetch_posts(  # type: ignore[union-attr]
+                account,
+                cursor=cursor if initialized else None,
+            )
+        except Exception as exc:
+            logger.warning("fxtwitter: fetch failed for %s: %s", account, exc)
+            state["next_run"] = time.monotonic() + self.fxtwitter_interval_seconds
+            return
+
+        state["next_run"] = time.monotonic() + self.fxtwitter_interval_seconds
+        if top_cursor:
+            state["top_cursor"] = top_cursor
+
+        if not initialized:
+            # 初回は何も送らず、カーソル位置だけ記録する
+            state["initialized"] = True
+            logger.info(
+                "fxtwitter: initialized for %s in channel %s (cursor: %s, %d posts found)",
+                account,
+                subscription.channel_id,
+                top_cursor,
+                len(posts),
+            )
+            return
+
+        if not posts:
+            logger.debug("fxtwitter: no new posts for %s in channel %s", account, subscription.channel_id)
+            return
+
+        new_posts: list[dict] = []
+        for entry in posts:
+            entry_id = entry.get("id")
+            if not entry_id:
+                continue
+            already_sent = await self._is_already_sent(subscription.channel_id, entry_id)
+            if already_sent:
+                logger.debug("fxtwitter: skipping already-sent post %s for %s", entry_id, account)
+                continue
+            if not self._should_include(entry, subscription):
+                continue
+            new_posts.append(entry)
+
+        for entry in reversed(new_posts):
+            await self.notifier.send_message(
+                subscription.channel_id,
+                account,
+                entry.get("text", ""),
+                entry.get("link", ""),
+                thread_id=subscription.thread_id,
+            )
+            await self._record_sent_link(subscription.channel_id, entry.get("id"))
+            logger.info(
+                "fxtwitter: sent post %s for %s in channel %s",
+                entry.get("id"),
+                account,
+                subscription.channel_id,
+            )
 
     async def _is_already_sent(self, channel_id: int, entry_id: str | None) -> bool:
         """ポストIDが既に送信済みかチェック（Redis）"""

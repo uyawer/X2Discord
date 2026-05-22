@@ -4,6 +4,7 @@ FastAPIサーバーがローカルのRSSHub経由で指定アカウントの投�
 
 ## 特徴
 - RSSHubが提供する `RSSHUB_BASE_URL/twitter/user/<ユーザーID>` を周期的に叩いて投稿を取得
+- **`api.fxtwitter.com` によるサブソース** - RSSHubで取得できなかった投稿を30分間隔で補完し、Redisの重複チェックによってRSSHubが既に通知した投稿は送信しない
 - Discord Botを `/add`/`/remove` で制御し、チャンネル毎に任意のアカウントを監視
 - 永続化された `subscriptions.json` に設定を保存し、再起動後も定義を保持
 - **Redisを使用した送信済みリンクの永続化** - アプリ再起動後も重複投稿を防止
@@ -29,6 +30,7 @@ pip install -r requirements.txt
 - `REDIS_URL` : Redis接続URL（デフォルト `redis://localhost:6379/0`、送信済みリンクの永続化に使用）
 - `DEFAULT_POLL_INTERVAL_SECONDS` : `/add` で `polling` を省略した際のデフォルト（300秒）
 - `MIN_POLL_INTERVAL_SECONDS` : 指定可能な最小値（300秒）
+- `FXTWITTER_POLL_INTERVAL_SECONDS` : `api.fxtwitter.com` へのポーリング間隔（デフォルト `1800` = 30分）
 - `SUBSCRIPTIONS_PATH` : 監視設定を保存するファイルパス（省略時 `subscriptions.json`）
 - `GUILD_IDS` : カンマ区切りで指定するスラッシュコマンドを配布する Discord ギルド ID（省略するとグローバルコマンドになります）
 
@@ -40,13 +42,23 @@ python -m uvicorn app.main:app --reload
 ## Docker
 ⚠️ **重要**: X2Discordは**Redisが必須**です。送信済みリンクの永続化に使用し、重複投稿を防止します。
 
-### Docker Composeで起動s
+### Docker Composeで起動
 ```bash
 # .env.exampleをコピーして設定
 cp .env.example .env
 # .envを編集してDISCORD_BOT_TOKENなどを設定
 
 # 全サービスを起動（初回はイメージのビルドも自動で行われます）
+docker compose up -d --build
+```
+
+### 更新（コンテナが既に起動中の場合）
+```bash
+docker compose up -d --build
+```
+これだけで OK です。ただし Podman Compose と Docker Compose を混在させて使った場合など、ネットワークのラベル不一致でエラーになることがあります。その場合は一度停止してから再起動してください。
+```bash
+docker compose down
 docker compose up -d --build
 ```
 

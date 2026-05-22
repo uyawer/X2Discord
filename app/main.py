@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from .config import Settings
 from .discord_bot import DiscordNotifier
+from .fxtwitter_client import FxTwitterClient
 from .poller import TweetPoller
 from .redis_store import RedisLinkStore
 from .rsshub_client import RssHubClient
@@ -20,6 +21,7 @@ store = SubscriptionStore(
     min_interval_seconds=settings.min_poll_interval_seconds,
 )
 rsshub_client = RssHubClient(settings.rsshub_base_url)
+fxtwitter_client = FxTwitterClient()
 redis_store = RedisLinkStore(
     settings.redis_url,
     max_links_per_channel=1000,  # 各チャンネルで記憶する最大リンク数
@@ -30,7 +32,14 @@ notifier = DiscordNotifier(
     rsshub_client,
     guild_ids=settings.guild_ids,
 )
-poller = TweetPoller(notifier, store, rsshub_client, redis_store)
+poller = TweetPoller(
+    notifier,
+    store,
+    rsshub_client,
+    redis_store,
+    fxtwitter_client=fxtwitter_client,
+    fxtwitter_interval_seconds=settings.fxtwitter_poll_interval_seconds,
+)
 app = FastAPI(title="Twitter to Discord Bridge")
 
 
@@ -66,6 +75,7 @@ async def shutdown_event() -> None:
             pass
     await notifier.close()
     await rsshub_client.close()
+    await fxtwitter_client.close()
     await redis_store.close()
 
 
